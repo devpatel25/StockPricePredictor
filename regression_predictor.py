@@ -11,9 +11,11 @@ from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.model_selection import cross_val_score, TimeSeriesSplit
+from sklearn.impute import SimpleImputer
 import joblib
 from typing import Tuple, Dict, List
 import warnings
+import os
 warnings.filterwarnings('ignore')
 
 class RegressionPredictor:
@@ -34,6 +36,7 @@ class RegressionPredictor:
         self.feature_names = []
         self.best_model = None
         self.scaler = None
+        self.imputer = None
         
     def create_features(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -268,6 +271,10 @@ if __name__ == "__main__":
     df = pd.read_csv('data/signals/AAPL_ma_signals.csv', 
                      index_col='Date', parse_dates=True)
     
+    # Ensure directories exist
+    os.makedirs('models', exist_ok=True)
+    os.makedirs('data/predictions', exist_ok=True)
+    
     # Initialize predictor
     predictor = RegressionPredictor(lookback_days=5)
     
@@ -277,12 +284,18 @@ if __name__ == "__main__":
     
     # Split data (80/20)
     split_index = int(len(X) * 0.8)
-    X_train, X_test = X[:split_index], X[split_index:]
+    X_train_raw, X_test_raw = X[:split_index], X[split_index:]
     y_train, y_test = y[:split_index], y[split_index:]
     
-    print(f"Training samples: {len(X_train)}")
-    print(f"Testing samples: {len(X_test)}")
-    print(f"Features per sample: {X_train.shape[1]}")
+    print(f"Training samples: {len(X_train_raw)}")
+    print(f"Testing samples: {len(X_test_raw)}")
+    print(f"Features per sample: {X_train_raw.shape[1]}")
+    
+    # Impute missing values (fit on training, apply to both)
+    imputer = SimpleImputer(strategy='mean')
+    X_train = imputer.fit_transform(X_train_raw)
+    X_test = imputer.transform(X_test_raw)
+    predictor.imputer = imputer  # store for potential later use
     
     # Evaluate all models
     print("\nEvaluating models...")
@@ -299,8 +312,11 @@ if __name__ == "__main__":
     predictions = []
     
     for i in range(len(X_test)):
+        # current_price: use previous actual (test series) or last training target for first test sample
         current_price = y_test[i] if i > 0 else y_train[-1]
-        predicted_price = predictor.predict_next_day(predictor.best_model, X_test[i])
+        # features are already imputed
+        current_features = X_test[i]
+        predicted_price = predictor.predict_next_day(predictor.best_model, current_features)
         signal = predictor.generate_trading_signal(current_price, predicted_price)
         
         signals.append(signal)
@@ -314,11 +330,11 @@ if __name__ == "__main__":
     # Save model
     predictor.save_model('models/best_regression_model.pkl')
     
-    # Save predictions
+    # Save predictions (align index if desired)
     test_results = pd.DataFrame({
         'Actual': y_test,
         'Predicted': predictions,
         'Signal': signals
     })
-    test_results.to_csv('data/predictions/regression_predictions.csv')
+    test_results.to_csv('data/predictions/regression_predictions.csv', index=False)
     print("\nPredictions saved to data/predictions/regression_predictions.csv")

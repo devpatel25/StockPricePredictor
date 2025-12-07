@@ -147,19 +147,15 @@ class SignalGenerator:
                                 predicted_price: float = None) -> Dict:
         """
         Generate final weighted signal from all components.
-        
-        Time Complexity: O(1) - fixed number of components
-        Space Complexity: O(1)
-        
-        CS 5800: Weighted voting ensemble
         """
         # Calculate individual components
         ma_signal = self.calculate_ma_component(row)
         macd_signal = self.calculate_macd_component(row)
         dp_signal = self.calculate_dp_component(row)
         
-        # Regression component (if prices provided)
-        if current_price and predicted_price:
+        # Regression component (if prices provided and not NaN)
+        if (current_price is not None and predicted_price is not None and
+            not pd.isna(current_price) and not pd.isna(predicted_price)):
             reg_signal = self.calculate_regression_component(
                 current_price, predicted_price
             )
@@ -259,8 +255,6 @@ class SignalGenerator:
                                       predictions: pd.Series = None) -> pd.DataFrame:
         """
         Generate signals for entire dataframe.
-        
-        Time Complexity: O(n) where n is number of rows
         """
         signals = []
         scores = []
@@ -269,9 +263,28 @@ class SignalGenerator:
         for i in range(len(df)):
             row = df.iloc[i]
             
-            # Get predicted price if available
-            pred_price = predictions.iloc[i] if predictions is not None else None
-            curr_price = row['Close'] if 'Close' in row else None
+            # Resolve predicted price:
+            pred_price = None
+            if predictions is not None:
+                # Prefer alignment by index/label (e.g. Date)
+                try:
+                    if isinstance(predictions, pd.Series):
+                        pred_price = predictions.get(row.name, None)
+                    else:
+                        # fallback to positional indexing for lists/ndarrays or DataFrames
+                        if hasattr(predictions, 'iloc'):
+                            pred_price = predictions.iloc[i]
+                        else:
+                            pred_price = predictions[i]
+                except Exception:
+                    pred_price = None
+
+                # normalize NaN -> None
+                if pd.isna(pred_price):
+                    pred_price = None
+
+            # Current price (safe access)
+            curr_price = row.get('Close', None) if isinstance(row, pd.Series) else None
             
             # Generate signal
             result = self.generate_combined_signal(row, curr_price, pred_price)

@@ -10,6 +10,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 import matplotlib.pyplot as plt
 from datetime import datetime
+import os
 
 class Backtester:
     """
@@ -195,7 +196,11 @@ class Backtester:
         pf_df['returns'] = pf_df['value'].pct_change()
         
         # Sharpe ratio (assuming 0% risk-free rate)
-        sharpe_ratio = pf_df['returns'].mean() / pf_df['returns'].std() * np.sqrt(252)
+        std_returns = pf_df['returns'].std()
+        if std_returns == 0 or np.isnan(std_returns):
+            sharpe_ratio = 0.0
+        else:
+            sharpe_ratio = pf_df['returns'].mean() / std_returns * np.sqrt(252)
         
         # Maximum drawdown
         cumulative = (1 + pf_df['returns']).cumprod()
@@ -250,6 +255,9 @@ class Backtester:
         
         CS 5800: Data visualization
         """
+        # Ensure results directory exists before saving files/plots
+        os.makedirs('results', exist_ok=True)
+        
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         
         # Portfolio value over time
@@ -311,6 +319,9 @@ if __name__ == "__main__":
     
     # Run backtest
     metrics = backtester.run_backtest(df)
+    
+    # Ensure results dir exists before saving/plotting
+    os.makedirs('results', exist_ok=True)
     
     # Print results
     print("\nBacktest Results:")
